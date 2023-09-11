@@ -38,11 +38,22 @@ public class Main {
                         System.out.println("Unknown database kind.");
                         break;
                 }
+                System.out.println("Pulling quarkus  service image...");
+                dockerLogin();
+                pullDockerImage(configLoader.getProperty("quarkus.image"));
+                startQuarkusService();
+                dockerLogout();
+
             }
         } catch (Exception e) {
             System.out.println("Error: " + e.getMessage());
         }
     }
+    private static void dockerLogout() throws IOException, InterruptedException {
+        ProcessBuilder processBuilder = new ProcessBuilder("docker", "logout");
+        processBuilder.start().waitFor();
+    }
+
 
     private static void handleCockroachDB() throws IOException, InterruptedException {
         System.out.println("Pulling CockroachDB image...");
@@ -133,6 +144,20 @@ public class Main {
         );
         processBuilder.start().waitFor();
     }
+    private static void startQuarkusService() throws IOException, InterruptedException {
+        ProcessBuilder processBuilder = new ProcessBuilder(
+                "docker", "run",
+                "--name", configLoader.getProperty("quarkus.container.name"),
+                "-d",
+                "-p", configLoader.getProperty("quarkus.external.port") + ":" + configLoader.getProperty("quarkus.internal.port"),
+                configLoader.getProperty("quarkus.image")
+        );
+        processBuilder.start().waitFor();
+    }
+
+
+
+
 
     private static String getOsName() {
         return System.getProperty("os.name").toLowerCase();
@@ -194,6 +219,26 @@ public class Main {
         in.close();
         return Integer.parseInt(inputLine.trim());
     }
+
+    private static void dockerLogin() throws IOException, InterruptedException {
+        String dockerUsername = configLoader.getProperty("docker.username");
+        String dockerToken = configLoader.getProperty("docker.token");
+
+        ProcessBuilder processBuilder = new ProcessBuilder("docker", "login", "-u", dockerUsername, "--password-stdin");
+        processBuilder.redirectErrorStream(true);
+
+        Process process = processBuilder.start();
+        try (OutputStream os = process.getOutputStream()) {
+            os.write(dockerToken.getBytes());
+            os.flush();
+        }
+
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            throw new IOException("Failed to login to Docker Hub.");
+        }
+    }
+
 
 
 
