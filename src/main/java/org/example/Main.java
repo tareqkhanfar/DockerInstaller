@@ -160,7 +160,12 @@ public class Main {
 
 
     private static String getOsName() {
-        return System.getProperty("os.name").toLowerCase();
+        System.out.println("OS : " + System.getProperty("os.name").toLowerCase());
+        if (System.getProperty("os.name").toLowerCase().contains("linux")){
+            return "ubuntu" ;
+        }
+
+        return System.getProperty("os.name").toLowerCase() ;
     }
 
     private static boolean isDockerInstalled() throws InterruptedException {
@@ -183,8 +188,10 @@ public class Main {
 
     private static void downloadDockerInstaller() throws IOException {
         String osName = getOsName();
+        if (osName.contains("ubuntu")) return;
+
         String urlProperty = "docker.installer.url." +
-                (osName.contains("win") ? "windows" : osName.contains("mac") ? "mac" : "ubuntu");
+                (osName.contains("win") ? "windows" : osName.contains("mac") ? "mac" : "unknown");
         HttpURLConnection connection = (HttpURLConnection) new URL(configLoader.getProperty(urlProperty)).openConnection();
         connection.setRequestMethod("GET");
         try (InputStream in = connection.getInputStream();
@@ -197,11 +204,56 @@ public class Main {
         }
     }
 
-    private static void installDocker() throws IOException, InterruptedException {
-        ProcessBuilder processBuilder = new ProcessBuilder(configLoader.getProperty("docker.installer.path"));
-        processBuilder.inheritIO(); // This makes the command output to be displayed in the terminal
+    private static void ensureCurlIsInstalled() throws IOException, InterruptedException {
+        if (!isCurlInstalled()) {
+            ProcessBuilder installCurl = new ProcessBuilder("apt-get", "install", "curl", "-y");
+            installCurl.start().waitFor();
+        }
+    }
+    private static boolean isCurlInstalled() throws InterruptedException {
+        try {
+            ProcessBuilder processBuilder = new ProcessBuilder("curl", "--version");
+            Process process = processBuilder.start();
+            int exitCode = process.waitFor();
+            return exitCode == 0;
+        } catch (IOException e) {
+            return false;
+        }
+    }
 
-        processBuilder.start().waitFor();
+    private static void installDocker() throws IOException, InterruptedException {
+        if (getOsName().contains("ubuntu")) {
+            ensureCurlIsInstalled();
+
+            ProcessBuilder updateProcess = new ProcessBuilder("apt-get", "update");
+            updateProcess.start().waitFor();
+
+            ProcessBuilder installDependencies = new ProcessBuilder("apt-get", "install", "apt-transport-https", "ca-certificates", "software-properties-common", "-y");
+            installDependencies.start().waitFor();
+
+            ProcessBuilder addGPGKey = new ProcessBuilder("sh", "-c", "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -");
+            addGPGKey.start().waitFor();
+
+            ProcessBuilder addDockerRepo = new ProcessBuilder("sh", "-c", "add-apt-repository \"deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\"");
+            addDockerRepo.inheritIO();
+
+            addDockerRepo.start().waitFor();
+
+            ProcessBuilder updateAgain = new ProcessBuilder("apt-get", "update");
+            updateAgain.inheritIO();
+
+            updateAgain.start().waitFor();
+
+            ProcessBuilder installDocker = new ProcessBuilder("apt-get", "install", "docker-ce", "-y");
+
+            installDocker.inheritIO();
+
+            installDocker.start().waitFor();
+        } else {
+            ProcessBuilder processBuilder = new ProcessBuilder(configLoader.getProperty("docker.installer.path"));
+            processBuilder.inheritIO();
+            processBuilder.start().waitFor();
+        }
     }
 
     private static void pullDockerImage(String imageName) throws IOException, InterruptedException {
